@@ -1,5 +1,6 @@
 const User = require("../models/user"),
   passport = require("passport"),
+  jsonWebToken = require("jsonwebtoken"),
   getUserParams = body => {
     return {
       name: {
@@ -25,31 +26,16 @@ module.exports = {
       });
   },
   indexView: (req, res) => {
-    res.render("users/index", {
-      flashMessages: {
-        success: "Loaded all users!"
-      }
-    });
+    if(req.query.format === "json") {
+      res.json(res.locals.courses);
+    } else {
+      res.render("courses/index");
+    }
   },
   new: (req, res) => {
     res.render("users/new");
   },
   create: (req, res, next) => {
-  //   let userParams = getUserParams(req.body);
-  //   User.create(userParams)
-  //     .then(user => {
-  //       req.flash("success", `${user.fullName}'s account created successfully!`);
-  //       res.locals.redirect = "/users";
-  //       res.locals.user = user;
-  //       next();
-  //     })
-  //     .catch(error => {
-  //       console.log(`Error saving user: ${error.message}`);
-  //       res.locals.redirect = "/users/new";
-  //       req.flash("error", `Failed to create user account because: ${error.message}.`);
-  //       next();
-  //     });
-  // },
   if (req.skip) next();
     let newUser = new User(getUserParams(req.body));
     User.register(newUser, req.body.password, (error, user) => {
@@ -177,50 +163,71 @@ module.exports = {
     req.flash("success", "You have been logged out!");
     res.locals.redirect = "/";
     next();
+  },
+  // verifyToken: (req, res, next) => {
+  //   let token = req.query.apiToken;
+  //   if (token) {
+  //     User.findOne({ apiToken: token })
+  //       .then(user => {
+  //         if (user) next();
+  //         else next(new Error("Invalid API token."));
+  //       })
+  //       .catch(error => {
+  //         next(new Error(error.message));
+  //       });
+  //   } else {
+  //     next(new Error("Invalid API token."));
+  //   }
+  // }
+  apiAuthenticate: (req, res, next) => {
+    passport.authenticate("local", (errors, user) => {
+      if (user) {
+        let signedToken = jsonWebToken.sign(
+          {
+            data: user._id,
+            exp: new Date().setDate(new Date().getDate() + 1)
+          },
+          "secret_encoding_passphrase"
+        );
+        res.json({
+          success: true,
+          token: signedToken
+        });
+      } else
+        res.json({
+          success: false,
+          message: "Could not authenticate user."
+        });
+    })(req, res, next);
+  },
+  verifyJWT: (req, res, next) => {
+    let token = req.headers.token;
+    if (token) {
+      jsonWebToken.verify(token, "secret_encoding_passphrase", (errors, payload) => {
+        if (payload) {
+          User.findById(payload.data).then(user => {
+            if (user) {
+              next();
+            } else {
+              res.status(httpStatus.FORBIDDEN).json({
+                error: true,
+                message: "No User account found."
+              });
+            }
+          });
+        } else {
+          res.status(httpStatus.UNAUTHORIZED).json({
+            error: true,
+            message: "Cannot verify API token."
+          });
+          next();
+        }
+      });
+    } else {
+      res.status(httpStatus.UNAUTHORIZED).json({
+        error: true,
+        message: "Provide Token"
+      });
+    }
   }
 };
-
-// authenticate: (req, res, next) => {
-  //   User.findOne({
-    //     email: req.body.email
-    //   })
-    //     // .then(user => {
-      //     //   if (user && user.password === req.body.password) {
-        //     //     res.locals.redirect = `/users/${user._id}`;
-        //     //     req.flash("success", `${user.fullName}'s logged in successfully!'`);
-        //     //     res.locasl.user = user;
-        //     //     next();
-        //     //   } else {
-          //     //     req.flash("error", "Your account or password is incorrect. Please try again or contact your system administrator!");
-          //     //     res.locals.redirect = "/users/login";
-          //     //     next();
-          //     //   }
-          //     // })
-          //     // .catch(error => {
-            //     //   console.log(`Error loggin in user: ${error.message}`);
-            //     //   next(error);
-            //     // });
-            //     .then(user => {
-              //       if (user) {
-                //         user.passwordComparison(req.body.password).then(passwordsMatch => {
-                  //           if (passwordsMatch) {
-                    //             res.locals.redirect = `/users/${user._id}`;
-                    //             req.flash("success", `${user.fullName}'s logged in successfully!`);
-                    //             res.locals.user = user;
-                    //           } else {
-                      //             req.flash("error", "Failed to log in user account: Incorrect Password.");
-                      //             res.locals.redirect = "/users/login";
-                      //           }
-                      //           next();
-                      //         });
-                      //       } else {
-                        //         req.flash("error", "Failed to log in user account: User account not found.");
-                        //         res.locals.redirect = "/users/login";
-                        //         next();
-                        //       }
-                        //     })
-                        //     .catch(error => {
-                          //       console.log(`Error logging in user: ${error.message}`);
-                          //       next(error);
-                          //     });
-                          // },
